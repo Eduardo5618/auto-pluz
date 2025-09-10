@@ -16,8 +16,19 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Ignorar todo lo de data
+# Ignorar todo dentro de data
 data/*
 
-# Excepto los .gitkeep (para mantener la estructura de carpetas)
+# Permitir estos archivos/carpetas importantes
+!data/formato/
+!data/formato/BE FORMATO.xlsx
+
+!data/gui/
+!data/gui/logo.png
+!data/gui/icono.ico
+
+# Permitir toda la carpeta output
+!data/output/**
+
+# Mantener estructura con .gitkeep
 !data/**/.gitkeep
