@@ -1,0 +1,6 @@
+pandas>=1.5
+openpyxl>=3.1
+pyodbc>=4.0
+pillow
+tk
+pywin32

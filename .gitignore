@@ -1,0 +1,20 @@
+# Entornos virtuales
+.venv/
+env/
+venv/
+
+# Archivos temporales
+*.pyc
+__pycache__/
+*.log
+
+# Configuración local de IDEs
+.vscode/
+.idea/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Datos pesados o sensibles
+data/
