@@ -16,5 +16,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Datos pesados o sensibles
-data/
+# Ignorar todo lo de data
+data/*
+
+# Excepto los .gitkeep (para mantener la estructura de carpetas)
+!data/**/.gitkeep
