@@ -9,14 +9,27 @@ import subprocess
 import pythoncom
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+
 from main import ejecutar_proceso_desde_gui
+from GUI.gui_fotos import abrir_popup_fotos
+
+
 class App(tk.Tk):
+
     def __init__(self):
         super().__init__()
         self.title("Generador de Reporte de Lecturas")
         self.configure(bg="#f7f7f7")
-        self.minsize(820, 760)
-        self.resizable(True, True)
+
+        
+        w, h = 620, 660
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.winfo_screenheight() // 2) - (h // 2)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+        self._setup_style() 
+        self.resizable(False, False)
         self.iconbitmap(default="data/gui/icono.ico") 
 
         self.rutas_lecturas = [] 
@@ -27,76 +40,121 @@ class App(tk.Tk):
 
         self._crear_widgets()
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+    
+    def _on_close(self):
+        try:
+            self.destroy()    
+        finally:
+            os._exit(0)     
+            
     def _crear_widgets(self):
+        
+        bg = "#f7f7f7"
+        self.configure(bg=bg)
+
+        # --- Encabezado ---
+        header = tk.Frame(self, bg=bg)
+        header.pack(fill="x", padx=10, pady=(8, 4))
 
         try:
-            img = Image.open("data/gui/logo.png")
-            img = img.resize((140, 60))
+            img = Image.open("data/gui/logo.png").resize((140, 60))
             logo = ImageTk.PhotoImage(img)
-            tk.Label(self, image=logo, bg="#f7f7f7").pack(pady=5)
-            self.logo_img = logo  
+            tk.Label(header, image=logo, bg=bg).pack()
+            self.logo_img = logo
         except:
             tk.Label(self, text="🔧 Reporte de Lecturas", font=("Segoe UI", 16, "bold"), bg="#f7f7f7").pack(pady=10)
 
-        padx, pady = 8, 4
+        
+        # --- Cuerpo ---
+        body = tk.Frame(self, bg=bg)
+        body.pack(fill="both", expand=True, padx=10, pady=4)
 
-        # === Selección de Archivos ===
-        frm = tk.Frame(self, bg="#f7f7f7")
-        frm.pack(padx=10, pady=5, fill="x")
-        frm.grid_columnconfigure(1, weight=1)
+        # ====== Sección: Fuentes ======
+        sec1 = ttk.Labelframe(body, text="Fuentes")
+        sec1.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        sec1.grid_columnconfigure(1, weight=1)
+        
 
-        tk.Label(frm, text="📘 Archivo de Lecturas:").grid(row=0, column=0, sticky="w")
-        tk.Label(frm, text="(Seleccionados en consola)").grid(row=0, column=1, sticky="w")
-        tk.Button(frm, text="Buscar", command=self._buscar_lecturas).grid(row=0, column=2)
+        ttk.Label(sec1, text="Archivo de Lecturas:").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Label(sec1, text="(seleccionados en consola)").grid(row=0, column=1, sticky="w", pady=3)
+        ttk.Button(sec1, text="Buscar", command=self._buscar_lecturas).grid(row=0, column=2, padx=(6,0))
 
-        tk.Label(frm, text="📙 BD Access (Maestro):").grid(row=1, column=0, sticky="w")
-        tk.Entry(frm, textvariable=self.ruta_bd_maestro, width=70).grid(row=1, column=1)
-        tk.Button(frm, text="Buscar", command=lambda: self._buscar_bd('maestro')).grid(row=1, column=2)
+        ttk.Label(sec1, text="BD Access (Maestro):").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(sec1, textvariable=self.ruta_bd_maestro).grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('maestro')).grid(row=1, column=2, padx=(6,0))
 
-        tk.Label(frm, text="📗 BD Access (Secundaria):").grid(row=2, column=0, sticky="w")
-        tk.Entry(frm, textvariable=self.ruta_bd_extra, width=70).grid(row=2, column=1)
-        tk.Button(frm, text="Buscar", command=lambda: self._buscar_bd('extra')).grid(row=2, column=2)
+        ttk.Label(sec1, text="BD Access (Secundaria):").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(sec1, textvariable=self.ruta_bd_extra).grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('extra')).grid(row=2, column=2, padx=(6,0))
 
-        tk.Label(frm, text="📋 Tabla de Maestro:").grid(row=3, column=0, sticky="w")
-        self.combo_maestro = ttk.Combobox(frm, textvariable=self.tabla_maestro, width=67, state="readonly")
-        self.combo_maestro.grid(row=3, column=1, columnspan=2, sticky="w")
+        ttk.Separator(body).grid(row=1, column=0, sticky="ew", pady=4)
 
-        tk.Label(frm, text="📋 Tabla de BD Extra:").grid(row=4, column=0, sticky="w")
-        self.combo_extra = ttk.Combobox(frm, textvariable=self.tabla_extra, width=67, state="readonly")
-        self.combo_extra.grid(row=4, column=1, columnspan=2, sticky="w")
 
-        tk.Button(self, text="▶ Ejecutar Proceso", bg="green", fg="white", command=self._ejecutar_thread).pack(pady=10)
+        # ====== Sección: Tablas ======
+        sec2 = ttk.Labelframe(body, text="Tablas")
+        sec2.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        sec2.grid_columnconfigure(1, weight=1)
 
-        log_frame = tk.Frame(self, bg="#f7f7f7")
-        log_frame.pack(padx=padx, pady=pady, fill="both", expand=True)
+        ttk.Label(sec2, text="Tabla de Maestro:").grid(row=0, column=0, sticky="w", pady=3)
+        self.combo_maestro = ttk.Combobox(sec2, textvariable=self.tabla_maestro, state="readonly")
+        self.combo_maestro.grid(row=0, column=1, sticky="ew", pady=3)
+
+        ttk.Label(sec2, text="Tabla de BD Extra:").grid(row=1, column=0, sticky="w", pady=3)
+        self.combo_extra = ttk.Combobox(sec2, textvariable=self.tabla_extra, state="readonly")
+        self.combo_extra.grid(row=1, column=1, sticky="ew", pady=3)
+
+        ttk.Separator(body).grid(row=3, column=0, sticky="ew", pady=4)
+
+
+        # ====== Sección: Acciones ======
+        actions = ttk.Frame(body)
+        actions.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        actions.grid_columnconfigure(0, weight=1)
+
+        bar = ttk.Frame(actions)
+        bar.grid(row=0, column=0, sticky="w")
+
+        # Ejecutar
+        tk.Button(bar, text="▶ Ejecutar Proceso",
+                bg="#22a22a", fg="white", font=("Segoe UI", 10, "bold"),
+                padx=14, pady=6,
+                command=self._ejecutar_thread).pack(side="left", padx=(0, 8))
+        
+        # Manejo Fotos
+        tk.Button(bar, text="📷 Manejo Fotos…",
+                bg="#4da6ff", fg="white", font=("Segoe UI", 10, "bold"),
+                padx=12, pady=6,
+                command=self._abrir_popup_fotos).pack(side="left")
+        
+        # ====== Sección: Registro ======
+        sec4 = ttk.Labelframe(body, text="Registro")
+        sec4.grid(row=5, column=0, sticky="nsew")
+        body.grid_rowconfigure(5, weight=1)
+
+        log_frame = tk.Frame(sec4)
+        log_frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         self.text_log = tk.Text(log_frame, height=10, bg="#f0f0f0", font=("Consolas", 10), wrap="word")
         ysb = ttk.Scrollbar(log_frame, orient="vertical", command=self.text_log.yview)
         self.text_log.configure(yscrollcommand=ysb.set)
-
         self.text_log.pack(side="left", fill="both", expand=True)
         ysb.pack(side="right", fill="y")
 
-        # === Barra de Progreso ===
+        # ====== Barra de estado ======
+        status = tk.Frame(self, bg=bg)
+        status.pack(fill="x", padx=10, pady=(6, 8))
+
         self.progress_var = tk.IntVar(value=0)
-        self.progress = ttk.Progressbar(self, orient="horizontal", mode="determinate", variable=self.progress_var)
-        self.progress.pack(padx=10, pady=(5, 6), fill="x")
+        self.progress = ttk.Progressbar(status, orient="horizontal", mode="determinate",
+                                        variable=self.progress_var, length=220)
+        self.progress.pack(side="left", padx=(0, 10))
 
-        self.progress_label = tk.Label(self, text="Listo", anchor="w", bg="#f7f7f7")
-        self.progress_label.pack(padx=10, pady=(0, 10), fill="x")
-        
-        # --- Firma / footer ---
-        footer = tk.Frame(self, bg="#f7f7f7")
-        footer.pack(side="bottom", fill="x")
+        self.progress_label = ttk.Label(status, text="Listo")
+        self.progress_label.pack(side="left")
 
-        self.author_label = tk.Label(
-            footer,
-            text="Autor: Daniel Paredes",
-            bg="#f7f7f7",       # usa el mismo fondo de la ventana
-            fg="#6b7280",       # gris suave
-            font=("Segoe UI", 9, "italic")
-        )
-        self.author_label.pack(side="right", padx=10, pady=6)
+        ttk.Label(status, text="Autor: Daniel Paredes", foreground="#6b7280").pack(side="right")
+
 
     def _buscar_lecturas(self):
         paths = filedialog.askopenfilenames(filetypes=[("Archivos Excel", "*.xlsx")])
@@ -116,6 +174,22 @@ class App(tk.Tk):
             elif tipo == 'extra':
                 self.ruta_bd_extra.set(path)
                 self._cargar_tablas(path, self.combo_extra)
+
+    def _setup_style(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")  # aspecto limpio y consistente
+        except:
+            pass
+
+        # Botón primario (verde) para acciones principales
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=6)
+        style.map("Primary.TButton",
+                foreground=[("!disabled", "white")])
+
+        # Campos
+        style.configure("TEntry", padding=3)
+        style.configure("TLabelframe.Label", font=("Segoe UI", 10, "bold"))
 
     def _cargar_tablas(self, ruta_bd, combo):
         try:
@@ -180,6 +254,13 @@ class App(tk.Tk):
                 self.progress_label.config(text=f"{v}% - {text}")
             self.update_idletasks()
         self.after(0, _set)
+
+    def _abrir_popup_fotos(self):
+    # El popup actualizará la barra de estado usando este callback
+        abrir_popup_fotos(
+            parent=self,
+            status_cb=lambda msg: self.set_progress(self.progress_var.get(), msg)
+        )
 
 if __name__ == "__main__":
     app = App()

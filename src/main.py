@@ -177,7 +177,7 @@ def ejecutar_proceso_desde_gui(
             # al final, guarda un archivo de salida único por input
             ruta_reporte_final = os.path.join(
                 ruta_reporte_final_dir,
-                f"reporte_final_{nombre_archivo}.xlsx"
+                f"BE-{nombre_archivo}.xlsx"
             )
 
             insertar_datos_en_excel_existente(
@@ -190,6 +190,9 @@ def ejecutar_proceso_desde_gui(
             )
 
             logger(f"✅ Reporte generado: {ruta_reporte_final}\n")
+
+            
+
         except Exception as e:
             logger(f"❌ Error procesando {nombre_archivo}: {e}")
 
