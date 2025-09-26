@@ -55,8 +55,6 @@ def hacer_join(df_excel, df_access, clave_excel, clave_access, columnas_deseadas
 
     if clave_access in df_joined.columns and clave_access != clave_excel:
         df_joined.drop(columns=[clave_access], inplace=True)
-    #if clave_access in df_joined.columns:
-       # df_joined.drop(columns=[clave_access], inplace=True)
 
     return df_joined
 
