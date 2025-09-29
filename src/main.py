@@ -4,12 +4,11 @@ import pandas as pd
 from extraccion.extraccion import extraer_lecturas
 from access.access_reader import leer_tabla_access, hacer_join, obtener_campos_deseados_access,crear_indice_si_no_existe
 from export.export import insertar_datos_en_excel_existente
+from export.export_datos_final import extraer_y_pegar
 from utils.helpers import normalizar_columnas_finales
 
 ruta_excel_final = '../data/output/BE FORMATO (2).xlsx'
 hoja_destino = "LECTURAS"
-ruta_csv_unificado = '../data/output/tabla_unificada.csv'
-ruta_csv_final = '../data/output/tabla_final.csv'
 ruta_reporte_final = '../data/output/reporte_final.xlsx'
 
 def ejecutar_proceso_desde_gui(
@@ -191,7 +190,36 @@ def ejecutar_proceso_desde_gui(
 
             logger(f"✅ Reporte generado: {ruta_reporte_final}\n")
 
-            
+
+            # === 9. Exportar a Excel ===
+            logger("📤 Moviendo datos al excel Final...")
+
+            mapeo_celdas = {
+                "fecha": "G13",  
+                "sed":   "D7",  
+                "TOTALIZADOR": {
+                    "FACTOR":   "F22",
+                    "LECTURA 1":"G22",
+                    "LECTURA 2":"H22"
+                },
+                "ALP1": {
+                    "FACTOR":   "F25",
+                    "LECTURA 1":"G25",
+                    "LECTURA 2":"H25"
+                }
+            }
+                            
+            logger(f"🧭 extraer_y_pegar(input='{ruta_lecturas}', output='{ruta_reporte_final}')")
+            extraer_y_pegar(
+                ruta_input = rutas_lecturas,
+                hoja_input = "Lecturas",
+                ruta_output= ruta_excel_final,
+                hoja_output="BALANCE KWH",
+                mapeo_celdas = mapeo_celdas
+            )
+
+
+            logger("✅ Datos movidos con exito")
 
         except Exception as e:
             logger(f"❌ Error procesando {nombre_archivo}: {e}")
