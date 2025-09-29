@@ -127,6 +127,14 @@ class App(tk.Tk):
                 padx=12, pady=6,
                 command=self._abrir_popup_fotos).pack(side="left")
         
+                # Manejo Fotos
+        tk.Button(bar, text="🧹 Limpiar registro",
+                bg="#FF0000", fg="white", font=("Segoe UI", 10, "bold"),
+                padx=12, pady=6,
+                activebackground="#be123c", activeforeground="white",
+                command=self._limpiar_registro
+                ).pack(side="left", padx=(8, 0))
+        
         # ====== Sección: Registro ======
         sec4 = ttk.Labelframe(body, text="Registro")
         sec4.grid(row=5, column=0, sticky="nsew")
@@ -155,6 +163,36 @@ class App(tk.Tk):
 
         ttk.Label(status, text="Autor: Daniel Paredes", foreground="#6b7280").pack(side="right")
 
+    
+    def _limpiar_registro(self):
+        if not messagebox.askyesno("Confirmar", "¿Limpiar todos los campos y el registro?"):
+            return
+
+        # Limpia listas/vars
+        self.rutas_lecturas.clear()
+        self.ruta_bd_maestro.set("")
+        self.ruta_bd_extra.set("")
+        self.tabla_maestro.set("")
+        self.tabla_extra.set("")
+
+        # Resetea combos
+        try:
+            self.combo_maestro.set("")
+            self.combo_maestro['values'] = ()
+        except Exception:
+            pass
+        try:
+            self.combo_extra.set("")
+            self.combo_extra['values'] = ()
+        except Exception:
+            pass
+
+        # Limpia log y progreso
+        self.text_log.delete("1.0", tk.END)
+        self.set_progress(0, "Listo")
+
+        # Mensaje en log
+        self.log("🧹 Registro limpiado. Archivos seleccionados: 0")
 
     def _buscar_lecturas(self):
         paths = filedialog.askopenfilenames(filetypes=[("Archivos Excel", "*.xlsx")])
