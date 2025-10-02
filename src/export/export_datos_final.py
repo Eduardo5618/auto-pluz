@@ -226,13 +226,6 @@ def pegar_en_output(ruta_output, hoja_output, valores, mapeo_celdas, visible=Fal
     import pythoncom
     import win32com.client as win32
 
-    def _resolver_ruta(path_like):
-        if isinstance(path_like, (list, tuple)):
-            if not path_like:
-                raise FileNotFoundError("No se recibió ninguna ruta.")
-            return str(path_like[0])
-        return str(path_like)
-
     ruta_output = _resolver_ruta(ruta_output)
     ruta_output_abs = os.path.abspath(ruta_output)
 
@@ -296,33 +289,10 @@ def pegar_en_output(ruta_output, hoja_output, valores, mapeo_celdas, visible=Fal
             except:
                 pass
 
-
-def encontrar_tabla_por_totalizador(ws):
-
-    objetivos = {"TOTALIZADOR", "TOTALIZADOR - FACTURADOS"}
-    max_row, max_col = ws.max_row, ws.max_column
-
-    for r in range(1, max_row+1):
-        for c in range(1, max_col+1):
-            v = _clean(ws.cell(row=r, column=c).value)
-            if v in objetivos:
-                # headers una fila arriba del TOTALIZADOR
-                hdr_row = r - 1
-                if hdr_row < 1:
-                    continue
-                colmap = {
-                    "NOMBRE":    c,
-                    "FACTOR":    c + 1,
-                    "LECTURA 1": c + 2,
-                    "LECTURA 2": c + 3,
-                    "KWH":       c + 4,
-                }
-                return {"row": hdr_row, "colmap": colmap}
-    return None
-
-
 def extraer_y_pegar(ruta_input, hoja_input, ruta_output, hoja_output, mapeo_celdas, debug=True):
-
+    
+    if isinstance(ruta_input, (list, tuple)):
+        raise TypeError(f"ruta_input debe ser str/Path de archivo, no {type(ruta_input).__name__}")
     ruta_input  = _resolver_ruta(ruta_input)
     ruta_output = _resolver_ruta(ruta_output)
 
