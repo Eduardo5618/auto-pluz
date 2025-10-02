@@ -41,6 +41,7 @@ def ejecutar_proceso_desde_gui(
         progress_cb(0, "Preparando...")
 
     for i,ruta_lecturas in enumerate(rutas_lecturas):
+
         nombre_archivo = os.path.splitext(os.path.basename(ruta_lecturas))[0]
 
         logger("\n" + "🔽" * 40)
@@ -183,9 +184,9 @@ def ejecutar_proceso_desde_gui(
                 ruta_plantilla_excel=ruta_excel_final,
                 hoja_destino="LECTURAS",
                 df_datos=df_final,
-                mapeo_columnas=mapeo_columnas,
+                mapeo_columnas= mapeo_columnas,
                 fila_inicio=12,
-                ruta_salida=ruta_reporte_final
+                ruta_salida= ruta_reporte_final
             )
 
             logger(f"✅ Reporte generado: {ruta_reporte_final}\n")
@@ -197,23 +198,15 @@ def ejecutar_proceso_desde_gui(
             mapeo_celdas = {
                 "fecha": "G13",  
                 "sed":   "D7",  
-                "TOTALIZADOR": {
-                    "FACTOR":   "F22",
-                    "LECTURA 1":"G22",
-                    "LECTURA 2":"H22"
-                },
-                "ALP1": {
-                    "FACTOR":   "F25",
-                    "LECTURA 1":"G25",
-                    "LECTURA 2":"H25"
-                }
+                "TOTALIZADOR": {"FACTOR":   "F22","LECTURA 1":"G22","LECTURA 2":"H22"},
+                "ALP1": {"FACTOR":   "F25","LECTURA 1":"G25","LECTURA 2":"H25"}
             }
                             
             logger(f"🧭 extraer_y_pegar(input='{ruta_lecturas}', output='{ruta_reporte_final}')")
             extraer_y_pegar(
-                ruta_input = rutas_lecturas,
+                ruta_input = ruta_lecturas,
                 hoja_input = "Lecturas",
-                ruta_output= ruta_excel_final,
+                ruta_output= ruta_reporte_final,
                 hoja_output="BALANCE KWH",
                 mapeo_celdas = mapeo_celdas
             )

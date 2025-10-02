@@ -54,6 +54,8 @@ def insertar_datos_en_excel_existente(
     
     try:
         xl = win32.DispatchEx("Excel.Application")
+        if xl is None:
+            raise RuntimeError("No se pudo instanciar Excel (DispatchEx devolvió None).")
         xl.Visible = False
         xl.DisplayAlerts = False
         xl.EnableEvents = False
@@ -136,7 +138,7 @@ def insertar_datos_en_excel_existente(
 
         try:
             if xl is not None:
-                _retry_com(xl.Quit())
+                _retry_com(xl.Quit)
         except Exception:
             pass
         pythoncom.CoUninitialize()
