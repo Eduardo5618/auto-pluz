@@ -1,6 +1,5 @@
 import re
 import openpyxl
-from openpyxl.utils import get_column_letter
 
 
 DATE_PAT = re.compile(r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})\b')
@@ -12,7 +11,6 @@ DATE_PAT = re.compile(r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}
 def _clean(s):
     if s is None: 
         return ""
-    # Normaliza NBSP, mayúsculas, espacios y quita ":" final
     t = str(s).replace("\xa0", " ").upper().strip()
     t = re.sub(r"\s+", " ", t)
     if t.endswith(":"): 
@@ -63,7 +61,7 @@ def _extraer_fecha_por_regex(ws):
 
 
 def encontrar_valor_a_la_derecha(ws, etiqueta_base):
-    val, coord = _buscar_valor_derecha_robusto(ws, (etiqueta_base, f"{etiqueta_base}:", f" {etiqueta_base} ", f"{etiqueta_base} "))
+    val  = _buscar_valor_derecha_robusto(ws, (etiqueta_base, f"{etiqueta_base}:", f" {etiqueta_base} ", f"{etiqueta_base} "))
     return val
 
 # ------------------------------

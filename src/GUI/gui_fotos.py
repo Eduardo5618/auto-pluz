@@ -10,10 +10,8 @@ def abrir_popup_fotos(parent, status_cb=lambda s: None):
     win.title("Copiado/Inserción de Fotos (por patrón)")
     win.resizable(False, False)
 
-    # siempre delante y modal
     win.transient(parent);win.grab_set();win.focus_force();win.lift()
 
-    # centrar
     win.update_idletasks()
     px, py = parent.winfo_rootx(), parent.winfo_rooty()
     pw, ph = parent.winfo_width(), parent.winfo_height()
@@ -90,14 +88,16 @@ def abrir_popup_fotos(parent, status_cb=lambda s: None):
 
             btn.configure(state="disabled")
             txt.configure(state="normal"); txt.delete("1.0","end"); txt.configure(state="disabled")
-
             res = procesar_fotos_predefinidos(
                 ruta_excel=xlsx,
                 carpeta_inicio=ini,
                 carpeta_cierre=cie,
-                limpiar_previas=v_limpiar.get(),
+                limpiar_previas=bool(v_limpiar.get()),
+                img_w=157,
+                img_h=210,
                 logger=log
             )
+            
 
             msg = (f"🏁 RT_1: {res['RT_1']['ok']} ok / {res['RT_1']['err']} err | "
                    f"RT_2: {res['RT_2']['ok']} ok / {res['RT_2']['err']} err")

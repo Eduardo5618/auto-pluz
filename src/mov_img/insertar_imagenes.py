@@ -1,23 +1,17 @@
 import os
-import io
 import unicodedata
 from difflib import SequenceMatcher
-from typing import Callable, Dict, List, Tuple, Optional
-
-from openpyxl import load_workbook
-from openpyxl.drawing.image import Image as XLImage
-from openpyxl.utils import get_column_letter
+from typing import Callable, Dict, List, Optional
 
 try:
-    from PIL import Image, ImageOps  # type: ignore
+    from PIL import Image, ImageOps
     _PIL_OK = True
 except Exception:
     _PIL_OK = False
 
-
-# Valores fijos (predeterminados para tus celdas)
-IMG_WIDTH = 157   # 4.13 cm
-IMG_HEIGHT = 210  # 5.55 cm
+# ======== Config por defecto ========
+IMG_WIDTH  = 157
+IMG_HEIGHT = 210
 
 EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"}
 
@@ -26,14 +20,12 @@ DESTINOS_DEF: Dict[str, List[str]] = {
     "RT_2": ["G3", "G5", "F3", "F5"],
 }
 
-
 OBJETIVOS_DEF: Dict[str, List[str]] = {
     "RT_1": ["carga primaria r", "carga primaria t", "carga secundaria r", "carga secundaria t"],
     "RT_2": ["carga primaria r", "carga primaria t", "carga secundaria r", "carga secundaria t"],
 }
 
-# ===== Helpers de similitud =====
-
+# ======== Utilidades básicas ========
 def _normalize(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     s = "".join(c for c in s if not unicodedata.combining(c))
@@ -55,10 +47,7 @@ def _listar_imagenes(carpeta: str) -> List[str]:
         if os.path.splitext(fn.lower())[1] in EXTS
     )
 
-# ===== Limpieza selectiva de imágenes =====
-
 def _abrir_corrigiendo_exif(ruta: str):
-
     if not _PIL_OK:
         return None
     try:
@@ -66,77 +55,171 @@ def _abrir_corrigiendo_exif(ruta: str):
         return ImageOps.exif_transpose(img)
     except Exception:
         return None
-    
 
-def _anchor_cell_of(img) -> Optional[str]:
-    try:
-        col_idx = img.anchor._from.col + 1
-        row_idx = img.anchor._from.row + 1
-        return f"{get_column_letter(col_idx)}{row_idx}"
-    except Exception:
-        return None
-
-def _limpiar_imagenes_en_celdas(ws, celdas: List[str]) -> None:
-    keep = []
-    target = set(celdas)
-    for im in getattr(ws, "_images", []):
-        if _anchor_cell_of(im) not in target:
-            keep.append(im)
-    ws._images = keep
-
-# ===== Inserción (genérica por lista de rutas) =====
-def _insertar_en_celdas(
-        ws, 
-        rutas_imgs: List[Optional[str]], 
-        celdas: List[str],
-        img_w: int, 
-        img_h: int, 
-        log: Callable[[str], None],
-        autorotar: bool = True, 
-) -> Tuple[int,int]:
-    
-    ok = fail = 0
-    for ruta, celda in zip(rutas_imgs, celdas):
-        try:
-            if not ruta:
-                log(f"⚠️ Sin coincidencia para {ws.title}:{celda}")
-                continue
-            if not os.path.isfile(ruta):
-                raise FileNotFoundError(ruta)
-            
-            # Autorrotar y cargar correctamente en memoria si aplica
-            if autorotar and _PIL_OK:
-                pil_img = _abrir_corrigiendo_exif(ruta)
-                if pil_img is not None:
-                    buf = io.BytesIO()
-                    pil_img.save(buf, format="PNG")  # convertir a PNG en memoria
-                    buf.seek(0)
-                    img = XLImage(buf)              # pasar BytesIO a openpyxl
-                else:
-                    img = XLImage(ruta)
-            else:
-                img = XLImage(ruta)
-                
-            img.width, img.height = img_w, img_h
-            ws.add_image(img, celda)
-
-            ok += 1
-            log(f"✅ {os.path.basename(ruta)} → {ws.title}:{celda}")
-        except Exception as e:
-            fail += 1
-            nombre = os.path.basename(ruta) if ruta else "—"
-            log(f"❌ {nombre} → {ws.title}:{celda}: {e}")
-    if len(rutas_imgs) < len(celdas):
-        log(f"ℹ️ {ws.title}: faltaron {len(celdas) - len(rutas_imgs)} imagen(es).")
-    return ok, fail
-
-# ===== Selección por PATRÓN único (mantengo por compatibilidad) =====
 def _mejores_coincidencias(carpeta: str, patron: str, k: int = 4, threshold: float = 0.45) -> List[str]:
     files = _listar_imagenes(carpeta)
     scores = [(_score(os.path.basename(p), patron), p) for p in files]
     scores.sort(key=lambda x: x[0], reverse=True)
     return [p for sc, p in scores if sc >= threshold][:k]
 
+def _seleccionar_por_objetivos(carpeta: str, objetivos: List[str], threshold: float = 0.45) -> List[Optional[str]]:
+    files = _listar_imagenes(carpeta)
+    usados = set()
+    seleccion: List[Optional[str]] = []
+    for obj in objetivos:
+        if not obj:
+            seleccion.append(None); continue
+        candidatos = []
+        for p in files:
+            if p in usados: continue
+            candidatos.append((_score(os.path.basename(p), obj), p))
+        if not candidatos:
+            seleccion.append(None); continue
+        candidatos.sort(key=lambda x: x[0], reverse=True)
+        best_sc, best_path = candidatos[0]
+        if best_sc >= threshold:
+            usados.add(best_path)
+            seleccion.append(best_path)
+        else:
+            seleccion.append(None)
+    return seleccion
+
+# ======== Backend COM ========
+def _with_excel(ruta_excel, worker):
+    import pythoncom, win32com.client as win32
+    pythoncom.CoInitialize()
+    xl = wb = None
+    try:
+        xl = win32.DispatchEx("Excel.Application")
+        xl.DisplayAlerts  = False
+        xl.ScreenUpdating = False
+        xl.EnableEvents   = False
+
+        prev_calc = None
+
+        try:
+            prev_calc = xl.Application.Calculation
+            xl.Application.Calculation = -4135  
+        except Exception:
+            prev_calc = None
+
+        wb = xl.Workbooks.Open(os.path.abspath(ruta_excel), ReadOnly=False, UpdateLinks=0)
+        result = worker(xl, wb)
+        wb.Save()
+
+        if prev_calc is not None:
+            try:
+                xl.Application.Calculation = prev_calc
+            except Exception:
+                pass
+        return result
+    finally:
+        try:
+            if wb is not None:
+                wb.Close(SaveChanges=True)
+        except Exception:
+            pass
+        try:
+            if xl is not None:
+                xl.Quit()
+        except Exception:
+            pass
+        pythoncom.CoUninitialize()
+
+def _px_to_pt(px: float) -> float:
+    return float(px) * 0.75
+
+def _insertar_img_en_celda_com(ws, celda, ruta_img, img_w, img_h, autorotar=True):
+
+    from tempfile import NamedTemporaryFile
+    src = os.path.abspath(ruta_img)
+    tmpfile = None
+
+
+    w_pt = _px_to_pt(img_w)
+    h_pt = _px_to_pt(img_h)
+
+    r = ws.Range(celda)
+    try:
+
+        _limpiar_imagenes_en_celdas_com(ws, [celda])
+    except Exception:
+        pass
+
+    if autorotar and _PIL_OK:
+        try:
+            pil = _abrir_corrigiendo_exif(ruta_img)
+            if pil is not None:
+                tmp = NamedTemporaryFile(delete=False, suffix=".png")
+                pil.save(tmp.name, format="PNG")
+                tmpfile = tmp.name
+                src = tmpfile
+        except Exception:
+            pass
+
+    shp = ws.Shapes.AddPicture(
+        Filename=src,
+        LinkToFile=False,
+        SaveWithDocument=True,
+        Left=r.Left,
+        Top=r.Top,
+        Width=w_pt,
+        Height=h_pt
+    )
+
+    try:
+        shp.Name = f"FOTO__{ws.Name}__{celda}"
+    except Exception:
+        pass
+
+    try:
+        shp.LockAspectRatio = 0 
+    except Exception:
+        pass
+    try:
+        shp.Width = w_pt
+        shp.Height = h_pt
+    except Exception:
+        try:
+            if shp.Width and shp.Height:
+                shp.ScaleWidth(w_pt / float(shp.Width), 0)   
+                shp.ScaleHeight(h_pt / float(shp.Height), 0)
+                shp.Width = w_pt
+                shp.Height = h_pt
+        except Exception:
+            pass
+    try:
+        shp.Placement = 2 
+    except Exception:
+        pass
+
+    if tmpfile:
+        try:
+            os.unlink(tmpfile)
+        except Exception:
+            pass
+
+
+def _limpiar_imagenes_en_celdas_com(ws, celdas: List[str]):
+    targets = []
+    for c in celdas:
+        try:
+            r = ws.Range(c)
+            targets.append((round(r.Left, 1), round(r.Top, 1)))
+        except Exception:
+            continue
+    to_delete = []
+    for shp in ws.Shapes:
+        try:
+            if (round(shp.Left, 1), round(shp.Top, 1)) in targets:
+                to_delete.append(shp)
+        except Exception:
+            continue
+    for shp in to_delete:
+        try: shp.Delete()
+        except Exception: pass
+
+# ======== API pública (COM only) ========
 def procesar_fotos_por_patron(
     ruta_excel: str,
     carpeta_inicio: str,
@@ -148,9 +231,8 @@ def procesar_fotos_por_patron(
     img_h: int = IMG_HEIGHT,
     limpiar_previas: bool = False,
     logger: Callable[[str], None] = print,
-    autorotar: bool = True, 
+    autorotar: bool = True,
 ) -> Dict[str, Dict[str, int]]:
-
 
     if destinos is None:
         destinos = DESTINOS_DEF
@@ -162,59 +244,47 @@ def procesar_fotos_por_patron(
     if not os.path.isdir(carpeta_cierre):
         raise FileNotFoundError("Carpeta de CIERRE inválida.")
 
-    wb = load_workbook(ruta_excel)
-    if "RT_1" not in wb.sheetnames: raise ValueError("No existe hoja 'RT_1'.")
-    if "RT_2" not in wb.sheetnames: raise ValueError("No existe hoja 'RT_2'.")
+    def _worker(xl, wb):
+        sheetnames = [s.Name for s in wb.Sheets]
+        if "RT_1" not in sheetnames: raise ValueError("No existe hoja 'RT_1'.")
+        if "RT_2" not in sheetnames: raise ValueError("No existe hoja 'RT_2'.")
+        ws1, ws2 = wb.Worksheets("RT_1"), wb.Worksheets("RT_2")
 
-    ws1, ws2 = wb["RT_1"], wb["RT_2"]
-    dest1 = destinos.get("RT_1", [])[:4]
-    dest2 = destinos.get("RT_2", [])[:4]
+        dest1 = destinos.get("RT_1", [])[:4]
+        dest2 = destinos.get("RT_2", [])[:4]
 
-    if limpiar_previas:
-        _limpiar_imagenes_en_celdas(ws1, dest1)
-        _limpiar_imagenes_en_celdas(ws2, dest2)
-        logger("🧹 Imágenes previas removidas en celdas destino.")
+        if limpiar_previas:
+            _limpiar_imagenes_en_celdas_com(ws1, dest1)
+            _limpiar_imagenes_en_celdas_com(ws2, dest2)
+            logger("🧹 Imágenes previas removidas en celdas destino.")
 
-    logger(f"🔎 INICIO: buscando patrón “{patron_inicio}”…")
-    sel_ini = _mejores_coincidencias(carpeta_inicio, patron_inicio, k=len(dest1))
-    ok1, f1 = _insertar_en_celdas(ws1, sel_ini, dest1, img_w, img_h, logger, autorotar=autorotar)
+        logger(f"🔎 INICIO: buscando patrón “{patron_inicio}”…")
+        sel_ini = _mejores_coincidencias(carpeta_inicio, patron_inicio, k=len(dest1))
+        ok1 = err1 = 0
+        for ruta, celda in zip(sel_ini, dest1):
+            try:
+                if not ruta:
+                    logger(f"⚠️ Sin coincidencia para RT_1:{celda}"); continue
+                _insertar_img_en_celda_com(ws1, celda, ruta, img_w, img_h, autorotar=autorotar)
+                ok1 += 1; logger(f"✅ {os.path.basename(ruta)} → RT_1:{celda}")
+            except Exception as e:
+                err1 += 1; logger(f"❌ {os.path.basename(ruta)} → RT_1:{celda}: {e}")
 
-    logger(f"🔎 CIERRE: buscando patrón “{patron_cierre}”…")
-    sel_cie = _mejores_coincidencias(carpeta_cierre, patron_cierre, k=len(dest2))
-    ok2, f2 = _insertar_en_celdas(ws2, sel_cie, dest2, img_w, img_h, logger, autorotar=autorotar)
+        logger(f"🔎 CIERRE: buscando patrón “{patron_cierre}”…")
+        sel_cie = _mejores_coincidencias(carpeta_cierre, patron_cierre, k=len(dest2))
+        ok2 = err2 = 0
+        for ruta, celda in zip(sel_cie, dest2):
+            try:
+                if not ruta:
+                    logger(f"⚠️ Sin coincidencia para RT_2:{celda}"); continue
+                _insertar_img_en_celda_com(ws2, celda, ruta, img_w, img_h, autorotar=autorotar)
+                ok2 += 1; logger(f"✅ {os.path.basename(ruta)} → RT_2:{celda}")
+            except Exception as e:
+                err2 += 1; logger(f"❌ {os.path.basename(ruta)} → RT_2:{celda}: {e}")
 
-    wb.save(ruta_excel)
-    return {"RT_1": {"ok": ok1, "err": f1}, "RT_2": {"ok": ok2, "err": f2}}
+        return {"RT_1": {"ok": ok1, "err": err1}, "RT_2": {"ok": ok2, "err": err2}}
 
-# ===== Selección por OBJETIVOS (uno por celda) =====
-def _seleccionar_por_objetivos(carpeta: str, objetivos: List[str], threshold: float = 0.45) -> List[Optional[str]]:
-    """Para cada objetivo, elige el mejor archivo disponible (sin repetir dentro de la hoja)."""
-    files = _listar_imagenes(carpeta)
-    usados = set()
-    seleccion: List[Optional[str]] = []
-
-    for obj in objetivos:
-        if not obj:
-            seleccion.append(None)
-            continue
-        # rankear no usados
-        candidatos = []
-        for p in files:
-            if p in usados:
-                continue
-            sc = _score(os.path.basename(p), obj)
-            candidatos.append((sc, p))
-        if not candidatos:
-            seleccion.append(None); continue
-
-        candidatos.sort(key=lambda x: x[0], reverse=True)
-        best_sc, best_path = candidatos[0]
-        if best_sc >= 0.45:
-            usados.add(best_path)
-            seleccion.append(best_path)
-        else:
-            seleccion.append(None)
-    return seleccion
+    return _with_excel(ruta_excel, _worker)
 
 def procesar_fotos_por_objetivos(
     ruta_excel: str,
@@ -229,10 +299,7 @@ def procesar_fotos_por_objetivos(
     logger: Callable[[str], None] = print,
     autorotar: bool = True,
 ) -> Dict[str, Dict[str, int]]:
-    """
-    Mapea cada objetivo a una celda (misma posición) y coloca la mejor coincidencia
-    por objetivo (sin repetir archivos dentro de la misma hoja).
-    """
+
     if destinos is None:
         destinos = DESTINOS_DEF
 
@@ -243,31 +310,48 @@ def procesar_fotos_por_objetivos(
     if not os.path.isdir(carpeta_cierre):
         raise FileNotFoundError("Carpeta de CIERRE inválida.")
 
-    wb = load_workbook(ruta_excel)
-    if "RT_1" not in wb.sheetnames: raise ValueError("No existe hoja 'RT_1'.")
-    if "RT_2" not in wb.sheetnames: raise ValueError("No existe hoja 'RT_2'.")
-    ws1, ws2 = wb["RT_1"], wb["RT_2"]
+    def _worker(xl, wb):
+        sheetnames = [s.Name for s in wb.Sheets]
+        if "RT_1" not in sheetnames: raise ValueError("No existe hoja 'RT_1'.")
+        if "RT_2" not in sheetnames: raise ValueError("No existe hoja 'RT_2'.")
+        ws1, ws2 = wb.Worksheets("RT_1"), wb.Worksheets("RT_2")
 
-    dest1 = (destinos.get("RT_1", []) or [])[:len(objetivos_inicio)]
-    dest2 = (destinos.get("RT_2", []) or [])[:len(objetivos_cierre)]
+        dest1 = (destinos.get("RT_1", []) or [])[:len(objetivos_inicio)]
+        dest2 = (destinos.get("RT_2", []) or [])[:len(objetivos_cierre)]
 
-    if limpiar_previas:
-        _limpiar_imagenes_en_celdas(ws1, dest1)
-        _limpiar_imagenes_en_celdas(ws2, dest2)
-        logger("🧹 Imágenes previas removidas en celdas destino.")
+        if limpiar_previas:
+            _limpiar_imagenes_en_celdas_com(ws1, dest1)
+            _limpiar_imagenes_en_celdas_com(ws2, dest2)
+            logger("🧹 Imágenes previas removidas en celdas destino.")
 
-    logger("🔎 INICIO: seleccionando por objetivos…")
-    rutas_ini = _seleccionar_por_objetivos(carpeta_inicio, objetivos_inicio)
-    ok1, f1 = _insertar_en_celdas(ws1, rutas_ini, dest1, img_w, img_h, logger, autorotar=autorotar)
+        logger("🔎 INICIO: seleccionando por objetivos…")
+        rutas_ini = _seleccionar_por_objetivos(carpeta_inicio, objetivos_inicio)
+        ok1 = err1 = 0
+        for ruta, celda in zip(rutas_ini, dest1):
+            try:
+                if not ruta:
+                    logger(f"⚠️ Sin coincidencia para RT_1:{celda}"); continue
+                _insertar_img_en_celda_com(ws1, celda, ruta, img_w, img_h, autorotar=autorotar)
+                ok1 += 1; logger(f"✅ {os.path.basename(ruta)} → RT_1:{celda}")
+            except Exception as e:
+                err1 += 1; logger(f"❌ {os.path.basename(ruta)} → RT_1:{celda}: {e}")
 
-    logger("🔎 CIERRE: seleccionando por objetivos…")
-    rutas_cie = _seleccionar_por_objetivos(carpeta_cierre, objetivos_cierre)
-    ok2, f2 = _insertar_en_celdas(ws2, rutas_cie, dest2, img_w, img_h, logger, autorotar=autorotar)
+        logger("🔎 CIERRE: seleccionando por objetivos…")
+        rutas_cie = _seleccionar_por_objetivos(carpeta_cierre, objetivos_cierre)
+        ok2 = err2 = 0
+        for ruta, celda in zip(rutas_cie, dest2):
+            try:
+                if not ruta:
+                    logger(f"⚠️ Sin coincidencia para RT_2:{celda}"); continue
+                _insertar_img_en_celda_com(ws2, celda, ruta, img_w, img_h, autorotar=autorotar)
+                ok2 += 1; logger(f"✅ {os.path.basename(ruta)} → RT_2:{celda}")
+            except Exception as e:
+                err2 += 1; logger(f"❌ {os.path.basename(ruta)} → RT_2:{celda}: {e}")
 
-    wb.save(ruta_excel)
-    return {"RT_1": {"ok": ok1, "err": f1}, "RT_2": {"ok": ok2, "err": f2}}
+        return {"RT_1": {"ok": ok1, "err": err1}, "RT_2": {"ok": ok2, "err": err2}}
 
-# ===== Wrapper con objetivos fijos (tu caso) =====
+    return _with_excel(ruta_excel, _worker)
+
 def procesar_fotos_predefinidos(
     ruta_excel: str,
     carpeta_inicio: str,
@@ -279,14 +363,8 @@ def procesar_fotos_predefinidos(
     logger: Callable[[str], None] = print,
     autorotar: bool = True,
 ) -> Dict[str, Dict[str, int]]:
-    """
-    Usa objetivos fijos:
-    - carga primaria r, carga primaria t, carga secundaria r, carga secundaria t
-    para INICIO (RT_1) y CIERRE (RT_2).
-    """
     if destinos is None:
         destinos = DESTINOS_DEF
-
     return procesar_fotos_por_objetivos(
         ruta_excel=ruta_excel,
         carpeta_inicio=carpeta_inicio,
@@ -298,5 +376,5 @@ def procesar_fotos_predefinidos(
         img_h=img_h,
         limpiar_previas=limpiar_previas,
         logger=logger,
-        autorotar=autorotar, 
+        autorotar=autorotar,
     )
