@@ -17,7 +17,6 @@ def extraer_lecturas(path_excel: str) -> pd.DataFrame:
     if idx_main_row is None:
         raise ValueError("❌ No se encontró 'Item' en el archivo.")
 
-    # localizar bloque 'AGREGARES'
     idx_agregares = df_all.iloc[idx_main_row + 1:].apply(
         lambda row: row.astype(str).str.upper().str.contains("AGREGARES", na=False).any(),
         axis=1
@@ -35,15 +34,13 @@ def extraer_lecturas(path_excel: str) -> pd.DataFrame:
         .str.strip()
         .tolist()
     )
-    # bloque principal
+    
     main_block = df_all.iloc[idx_main_row + 1 : idx_agregares, idx_main_col : idx_main_col + len(header)]
     main_block = main_block.dropna(how='all')
-    # quitar filas que son solo números (totales)
     main_block = main_block[~main_block.apply(
         lambda row: row.dropna().astype(str).str.fullmatch(r'\d+(\.\d+)?').all(), axis=1
     )]
 
-    #⚠️ SIEMPRE define df_main (aunque no haya filas)
     if main_block.empty:
         df_main = pd.DataFrame(columns=header)
     else:

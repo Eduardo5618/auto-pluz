@@ -39,4 +39,6 @@ REM
 echo Ejecutando aplicacion...
 python -m src.GUI.gui
 
+pause
+
 rem (sin 'pause')

@@ -1,13 +1,13 @@
 import re
 import openpyxl
+import os
+import pythoncom
+import win32com.client as win32
 
 
 DATE_PAT = re.compile(r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})\b')
 
 
-# ------------------------------
-# Helpers
-# ------------------------------
 def _clean(s):
     if s is None: 
         return ""
@@ -33,15 +33,12 @@ def _leer_celda_robusto(ws, row, col):
                 return ws.cell(row=mr.min_row, column=mr.min_col).value
     return val
 
-# ------------------------------
-# FECHA / SED
-# ------------------------------
+
 def _buscar_valor_derecha_robusto(ws, etiqueta_variantes=("FECHA","FECHA:", " FECHA ", "FECHA "), max_offset=3):
     objetivos = {_clean(x) for x in etiqueta_variantes}
     for row in ws.iter_rows(values_only=False):
         for cell in row:
             if _clean(cell.value) in objetivos:
-                # prueba 1,2,... max_offset celdas a la derecha
                 for k in range(1, max_offset+1):
                     val = _leer_celda_robusto(ws, cell.row, cell.column + k)
                     if val not in (None, ""):
@@ -49,7 +46,6 @@ def _buscar_valor_derecha_robusto(ws, etiqueta_variantes=("FECHA","FECHA:", " FE
     return None, None
 
 def _extraer_fecha_por_regex(ws):
-    # Recorre toda la hoja buscando un texto que parezca fecha
     for row in ws.iter_rows(values_only=True):
         for v in row:
             if v is None: continue
@@ -220,14 +216,9 @@ def leer_por_ancla_totalizador(ws):
 
 def pegar_en_output(ruta_output, hoja_output, valores, mapeo_celdas, visible=False):
 
-    import os
-    import pythoncom
-    import win32com.client as win32
-
     ruta_output = _resolver_ruta(ruta_output)
     ruta_output_abs = os.path.abspath(ruta_output)
 
-    # Inicia COM (clave si llamas desde hilos/GUI)
     need_uninit = False
     try:
         pythoncom.CoInitialize()
@@ -249,7 +240,6 @@ def pegar_en_output(ruta_output, hoja_output, valores, mapeo_celdas, visible=Fal
             hojas = [sh.Name for sh in wb.Worksheets]
             raise KeyError(f"No existe hoja '{hoja_output}' en '{ruta_output_abs}'. Hojas: {hojas}") from e
 
-        # ---- FECHA / SED ----
         if "fecha" in mapeo_celdas:
             celda_fecha = mapeo_celdas["fecha"]
             ws.Range(celda_fecha).Value = valores.get("fecha")
@@ -257,7 +247,6 @@ def pegar_en_output(ruta_output, hoja_output, valores, mapeo_celdas, visible=Fal
             celda_sed = mapeo_celdas["sed"]
             ws.Range(celda_sed).Value = valores.get("sed")
 
-        # ---- Tabla (TOTALIZADOR, ALP1, ...) ----
         filas = valores.get("filas", {})
         for nombre, campos in mapeo_celdas.items():
             if nombre in ("fecha", "sed"):
@@ -301,15 +290,12 @@ def extraer_y_pegar(ruta_input, hoja_input, ruta_output, hoja_output, mapeo_celd
         raise KeyError(f"No existe hoja '{hoja_input}' en '{ruta_input}'. Hojas: {wb_in.sheetnames}")
     ws_in = wb_in[hoja_input]
 
-    # 1) FECHA y SED
     fecha = encontrar_valor_a_la_derecha(ws_in, "FECHA")
     sed   = encontrar_valor_a_la_derecha(ws_in, "SED")
     if fecha in (None, ""):
-        # plan B si era fórmula sin cache
         wb_in_formula = openpyxl.load_workbook(ruta_input, data_only=False)
         fecha = _extraer_fecha_por_regex(wb_in_formula[hoja_input])
 
-    # 2) Tabla
     tabla_info = encontrar_tabla_resumen(ws_in) or encontrar_tabla_por_totalizador(ws_in)
     filas = leer_filas_tabla(ws_in, tabla_info, nombres_a_leer=("TOTALIZADOR","ALP1","ALP 1","ALP2","CLIENTES"))
     if not filas:

@@ -33,42 +33,18 @@ def leer_tabla_access(ruta_bd: str, tabla: str, campos:list) -> pd.DataFrame:
     
 
 def hacer_join(df_excel, df_access, clave_excel, clave_access, columnas_deseadas):
-
-    #df_excel[clave_excel] = df_excel[clave_excel].astype(str).str.strip()
     df_excel[clave_excel]  = pd.to_numeric(df_excel[clave_excel],  errors="coerce").astype("Int64")
-    #df_access[clave_access] = df_access[clave_access].astype(str).str.strip()
     df_access[clave_access]= pd.to_numeric(df_access[clave_access],errors="coerce").astype("Int64")
 
     df_access = df_access[df_access[clave_access].notna()]
     campos_unicos = [clave_access] + [c for c in columnas_deseadas if c != clave_access]
     df_access = df_access[campos_unicos]
-    #df_excel[clave_excel] = df_excel[clave_excel].str.extract(r'(\d+)')
-    #df_access[clave_access] = df_access[clave_access].str.extract(r'(\d+)')
 
     df_joined = df_excel.merge(df_access, left_on=clave_excel, right_on=clave_access, how="left", suffixes=('', '_access'))
     if clave_access in df_joined.columns and clave_access != clave_excel:
         df_joined.drop(columns=[clave_access], inplace=True)
         
     return df_joined
-    '''
-    df_access = df_access[df_access[clave_access].notna() & (df_access[clave_access] != 'nan')]
-
-    campos_unicos = [clave_access] + [c for c in columnas_deseadas if c != clave_access]
-    df_access = df_access[campos_unicos]
-
-    df_joined = pd.merge(df_excel,
-                        df_access, 
-                        left_on=clave_excel,
-                        right_on=clave_access,
-                        how='left',
-                        suffixes=('', '_access')
-                        )
-
-    if clave_access in df_joined.columns and clave_access != clave_excel:
-        df_joined.drop(columns=[clave_access], inplace=True)
-
-    return df_joined
-    '''
 
 def crear_indice_si_no_existe(ruta_bd, tabla, columna, nombre_indice="idx_auto"):
 

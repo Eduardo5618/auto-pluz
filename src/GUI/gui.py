@@ -37,6 +37,10 @@ class App(tk.Tk):
         self.ruta_bd_extra = tk.StringVar()
         self.tabla_maestro = tk.StringVar()
         self.tabla_extra = tk.StringVar()
+        self.usar_extra   = tk.BooleanVar(value=False)
+        self.usar_revision_actual = tk.BooleanVar(value=False) 
+        self.usar_analisis_extra = tk.BooleanVar(value=False) 
+        self.usar_extra = tk.BooleanVar(value=False) 
 
         self._crear_widgets()
 
@@ -80,16 +84,28 @@ class App(tk.Tk):
         ttk.Label(sec1, text="(seleccionados en consola)").grid(row=0, column=1, sticky="w", pady=3)
         ttk.Button(sec1, text="Buscar", command=self._buscar_lecturas).grid(row=0, column=2, padx=(6,0))
 
-        ttk.Label(sec1, text="BD Access (Maestro):").grid(row=1, column=0, sticky="w", pady=3)
-        ttk.Entry(sec1, textvariable=self.ruta_bd_maestro).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('maestro')).grid(row=1, column=2, padx=(6,0))
+        # ===== Maestro (opcional, colapsable por enable/disable) =====
+        ttk.Label(sec1, text="BD Access (Maestro) [Obligatorio]:").grid(row=1, column=0, sticky="w", pady=3)
+        self.entry_bd_maestro = ttk.Entry(sec1, textvariable=self.ruta_bd_maestro)
+        self.entry_bd_maestro.grid(row=1, column=1, sticky="ew", pady=3)
+        self.btn_bd_maestro = ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('maestro'))
+        self.btn_bd_maestro.grid(row=1, column=2, padx=(6,0))
 
-        ttk.Label(sec1, text="BD Access (Secundaria):").grid(row=2, column=0, sticky="w", pady=3)
-        ttk.Entry(sec1, textvariable=self.ruta_bd_extra).grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('extra')).grid(row=2, column=2, padx=(6,0))
+        self.chk_analisis = ttk.Checkbutton(
+            sec1,
+            text="Activar ANÁLISIS EXTRA (Mes actual + Revisión con BD secundaria)",
+            variable=self.usar_analisis_extra
+        )
+        self.chk_analisis.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 2))      
+
+        # ===== Extra (solo habilitable si maestro activo) =====
+        ttk.Label(sec1, text="BD Access (Secundaria) [Opcional]:").grid(row=3, column=0, sticky="w", pady=3)
+        self.entry_bd_extra = ttk.Entry(sec1, textvariable=self.ruta_bd_extra)
+        self.entry_bd_extra.grid(row=3, column=1, sticky="ew", pady=3)
+        self.btn_bd_extra = ttk.Button(sec1, text="Buscar", command=lambda: self._buscar_bd('extra'))
+        self.btn_bd_extra.grid(row=3, column=2, padx=(6,0))
 
         ttk.Separator(body).grid(row=1, column=0, sticky="ew", pady=4)
-
 
         # ====== Sección: Tablas ======
         sec2 = ttk.Labelframe(body, text="Tablas")
@@ -100,7 +116,7 @@ class App(tk.Tk):
         self.combo_maestro = ttk.Combobox(sec2, textvariable=self.tabla_maestro, state="readonly")
         self.combo_maestro.grid(row=0, column=1, sticky="ew", pady=3)
 
-        ttk.Label(sec2, text="Tabla de BD Extra:").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Label(sec2, text="Tabla de BD Extra [Opcional]:").grid(row=1, column=0, sticky="w", pady=3)
         self.combo_extra = ttk.Combobox(sec2, textvariable=self.tabla_extra, state="readonly")
         self.combo_extra.grid(row=1, column=1, sticky="ew", pady=3)
 
@@ -162,6 +178,9 @@ class App(tk.Tk):
         self.progress_label.pack(side="left")
 
         ttk.Label(status, text="Autor: Daniel Paredes", foreground="#6b7280").pack(side="right")
+
+        self.usar_analisis_extra.trace_add("write", self._toggle_bd_controls)
+        self._toggle_bd_controls()
 
     
     def _limpiar_registro(self):
@@ -265,16 +284,32 @@ class App(tk.Tk):
                 rutas_lecturas=self.rutas_lecturas,
                 ruta_bd_maestro=self.ruta_bd_maestro.get(),
                 tabla_maestro=self.tabla_maestro.get(),
-                ruta_bd_extra=self.ruta_bd_extra.get(),      
-                tabla_extra=self.tabla_extra.get(),        
+                ruta_bd_extra=self.ruta_bd_extra.get() if self.usar_analisis_extra.get() else "",
+                tabla_extra=self.tabla_extra.get() if self.usar_analisis_extra.get() else "",
                 ruta_excel_final=os.path.join("data", "formato", "BE FORMATO.xlsx"),
                 ruta_reporte_final_dir=os.path.join("data", "output"),
                 logger=self.log,
-                progress_cb=self.set_progress
+                progress_cb=self.set_progress,
+                usar_analisis_extra=bool(self.usar_analisis_extra.get())
             )
             self.set_progress(100, "Completado")
             carpeta = os.path.abspath(os.path.join("data", "output"))
             subprocess.Popen(f'explorer "{carpeta}"')
+
+            if not self.rutas_lecturas:
+                messagebox.showwarning("Falta información", "Selecciona al menos 1 archivo de lecturas.")
+                return
+
+            if not self.ruta_bd_maestro.get().strip() or not self.tabla_maestro.get().strip():
+                messagebox.showwarning("Falta información", "Selecciona BD Maestro y su tabla (obligatorio).")
+                return
+
+            if self.usar_analisis_extra.get():
+                if (self.ruta_bd_extra.get().strip() and not self.tabla_extra.get().strip()) or \
+                (self.tabla_extra.get().strip() and not self.ruta_bd_extra.get().strip()):
+                    messagebox.showwarning("Falta información", "Si usas BD Secundaria, selecciona ruta y tabla.")
+                    return
+    
         except Exception as e:
             self.log(f"❌ Error: {e}")
             messagebox.showerror("Error", str(e))
@@ -299,6 +334,29 @@ class App(tk.Tk):
             parent=self,
             status_cb=lambda msg: self.set_progress(self.progress_var.get(), msg)
         )
+
+    def _set_widget_state(self, widget, enabled: bool):
+        try:
+            widget.configure(state=("normal" if enabled else "disabled"))
+        except Exception:
+            pass
+
+    def _toggle_bd_controls(self, *_):
+        analisis_on = bool(self.usar_analisis_extra.get())
+
+        # Si apagan análisis extra, limpiar campos extra
+        if not analisis_on:
+            self.ruta_bd_extra.set("")
+            self.tabla_extra.set("")
+            try:
+                self.combo_extra.set("")
+                self.combo_extra['values'] = ()
+            except Exception:
+                pass
+
+        self._set_widget_state(self.entry_bd_extra, analisis_on)
+        self._set_widget_state(self.btn_bd_extra, analisis_on)
+        self._set_widget_state(self.combo_extra, analisis_on)
 
 if __name__ == "__main__":
     app = App()

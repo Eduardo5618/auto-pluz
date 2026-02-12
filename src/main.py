@@ -20,7 +20,8 @@ def ejecutar_proceso_desde_gui(
     ruta_excel_final, 
     ruta_reporte_final_dir, 
     logger,
-    progress_cb=None
+    progress_cb=None,
+    usar_analisis_extra: bool = False 
 ):
     from utils.config import mapeo_columnas
 
@@ -84,7 +85,7 @@ def ejecutar_proceso_desde_gui(
             _bump(f"Ruta de lectura ({i+1}/{total_files})")
             logger("✅ Ruta de Lectura generada\n")
 
-            # === 5. Mes actual ===
+            # === 5. Mes actual (OPCIONAL - análisis extra) ===
             col_lectura = 'Ultima_Lectura_Terreno'
             col_fecha = 'Fecha_Ultima_Lectura_Terreno'
             col_consumo = 'Ultimo_Consumo'
@@ -92,87 +93,108 @@ def ejecutar_proceso_desde_gui(
             MESES_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
                         7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
 
-            if all(c in df_final.columns for c in [col_lectura, col_fecha, col_consumo]):
+            if usar_analisis_extra:
+                if all(c in df_final.columns for c in [col_lectura, col_fecha, col_consumo]):
 
-                fecha_mode = pd.to_datetime(df_final[col_fecha], errors='coerce').dt.month.mode()
-                if not fecha_mode.empty:
-                    mes_actual = int(fecha_mode[0])
-                    nombre_mes = MESES_ES.get(mes_actual, str(mes_actual))
-                    
-                    logger(f"📅 Detectado mes de revisión actual: {nombre_mes}")
+                    fecha_mode = pd.to_datetime(df_final[col_fecha], errors='coerce').dt.month.mode()
+                    if not fecha_mode.empty:
+                        mes_actual = int(fecha_mode[0])
+                        nombre_mes = MESES_ES.get(mes_actual, str(mes_actual))
 
-                    df_final[f'Ultima Lectura - {nombre_mes}'] = df_final[col_lectura]
-                    df_final[f'Fecha Ultima Lectura - {nombre_mes}'] = df_final[col_fecha]
-                    df_final[f'Ultimo Consumo - {nombre_mes}'] = df_final[col_consumo]
+                        logger(f"📅 (Extra) Revisión actual activada: {nombre_mes}")
+
+                        df_final[f'Ultima Lectura - {nombre_mes}'] = df_final[col_lectura]
+                        df_final[f'Fecha Ultima Lectura - {nombre_mes}'] = df_final[col_fecha]
+                        df_final[f'Ultimo Consumo - {nombre_mes}'] = df_final[col_consumo]
+                    else:
+                        logger("⚠️ (Extra) No se pudo detectar el mes de revisión actual.")
                 else:
-                    logger("⚠️ No se pudo detectar el mes de revisión actual.")
+                    logger("⚠️ (Extra) Faltan columnas para crear revisión actual.")
             else:
-                logger("⚠️ Faltan columnas para crear revisión actual.")
+                logger("ℹ️ (Extra) Análisis desactivado: no se agregan columnas de mes actual.")
             _bump(f"Mes actual ({i+1}/{total_files})")
 
             # === 6. Agregar columnas desde segunda BD Access (revisión anterior) ===
             campos_extra = ['Cuenta', col_lectura, col_fecha, col_consumo]
-            logger("📥 Leyendo revisión anterior desde segunda BD...")
-            crear_indice_si_no_existe(ruta_bd_extra, tabla_extra, "Cuenta")
-            df_extra = leer_tabla_access(ruta_bd_extra, tabla_extra, campos_extra)
 
-            df_extra['Cuenta'] = df_extra['Cuenta'].astype(str).str.extract(r'(\d+)')
-            df_final['Cuenta'] = df_final['Cuenta'].astype(str).str.extract(r'(\d+)')
-
-            df_final = df_final.merge(
-                df_extra,
-                left_on='Cuenta',
-                right_on='Cuenta',
-                how='left',
-                suffixes=('', '_extra')
+            usar_bd_extra = (
+                usar_analisis_extra and
+                bool(ruta_bd_extra and str(ruta_bd_extra).strip()) and
+                bool(tabla_extra and str(tabla_extra).strip())
             )
 
-            fecha_extra = pd.to_datetime(df_final[f'{col_fecha}_extra'], errors='coerce')
-            mes_extra = fecha_extra.dt.month.mode()
+            if usar_bd_extra: 
+                logger("📥 Leyendo revisión anterior desde segunda BD...")
+                crear_indice_si_no_existe(ruta_bd_extra, tabla_extra, "Cuenta")
+                df_extra = leer_tabla_access(ruta_bd_extra, tabla_extra, campos_extra)
 
-            if not mes_extra.empty:
-                mes_2 = int(mes_extra[0])
-                nombre_mes_2 = MESES_ES.get(mes_2, str(mes_2))
-                logger(f"📅 Detectado mes de revisión anterior: {nombre_mes_2}")
+                df_extra['Cuenta'] = df_extra['Cuenta'].astype(str).str.extract(r'(\d+)')
+                df_final['Cuenta'] = df_final['Cuenta'].astype(str).str.extract(r'(\d+)')
 
-                df_final[f'Ultima Lectura - {nombre_mes_2}'] = df_final[f'{col_lectura}_extra']
-                df_final[f'Fecha Ultima Lectura - {nombre_mes_2}'] = df_final[f'{col_fecha}_extra']
-                df_final[f'Ultimo Consumo - {nombre_mes_2}'] = df_final[f'{col_consumo}_extra']
+                df_final = df_final.merge(
+                    df_extra,
+                    left_on='Cuenta',
+                    right_on='Cuenta',
+                    how='left',
+                    suffixes=('', '_extra')
+                )
+
+                fecha_extra = pd.to_datetime(df_final[f'{col_fecha}_extra'], errors='coerce')
+                mes_extra = fecha_extra.dt.month.mode()
+
+                if not mes_extra.empty:
+                    mes_2 = int(mes_extra[0])
+                    nombre_mes_2 = MESES_ES.get(mes_2, str(mes_2))
+                    logger(f"📅 Detectado mes de revisión anterior: {nombre_mes_2}")
+
+                    df_final[f'Ultima Lectura - {nombre_mes_2}'] = df_final[f'{col_lectura}_extra']
+                    df_final[f'Fecha Ultima Lectura - {nombre_mes_2}'] = df_final[f'{col_fecha}_extra']
+                    df_final[f'Ultimo Consumo - {nombre_mes_2}'] = df_final[f'{col_consumo}_extra']
+                else:
+                    logger("⚠️ No se detectó mes válido en revisión anterior")
+
+                drop_cols = [c for c in df_final.columns if c.endswith('_extra') or c == 'SUM']
+                if drop_cols:
+                    df_final.drop(columns=drop_cols, inplace=True, errors='ignore')
+                    logger("✅ Columnas de revisión comparativa añadidas\n")
+                    _bump(f"Revisión anterior ({i+1}/{total_files})")
+                else:
+                    if usar_analisis_extra:
+                        logger("ℹ️ (Extra) BD secundaria no seleccionada. Se omite revisión anterior.\n")
+                    else:
+                        logger("ℹ️ (Extra) Análisis desactivado: no se consulta BD secundaria.\n")
+                    _bump(f"Sin revisión anterior ({i+1}/{total_files})")
             else:
-                logger("⚠️ No se detectó mes válido en revisión anterior")
-
-            drop_cols = [c for c in df_final.columns if c.endswith('_extra') or c == 'SUM']
-            if drop_cols:
-                df_final.drop(columns=drop_cols, inplace=True, errors='ignore')
-                logger("✅ Columnas de revisión comparativa añadidas\n")
-                _bump(f"Revisión anterior ({i+1}/{total_files})")
-            else:
-                logger("ℹ️ Sin BD secundaria/tabla. Se omite revisión anterior.")
-                _bump(f"Sin revisión anterior ({i+1}/{total_files})")  
+                logger("ℹ️ BD secundaria no seleccionada. Se omite revisión anterior.\n")
+                _bump(f"Sin revisión anterior ({i+1}/{total_files})")
 
             # === 7. Renombrado final de columnas + CSV intermedio ===
             logger("🧽 Renombrando columnas finales...")
-            df_final = df_final.fillna("")
-            df_final = df_final.astype(str).replace("nan", "", regex=False)
+
             if 'Llave' in df_final.columns:
                 df_final['Llave'] = pd.to_numeric(df_final['Llave'], errors='coerce').fillna(0).astype(int)
             else:
                 df_final['Llave'] = 0
+
+            df_final = df_final.astype("string").fillna("")
+
+            # Normaliza nombres
             df_final = normalizar_columnas_finales(df_final)
 
-            
-            #df_final.to_csv(os.path.join("data", "output", "tabla_final.csv"), index=False, encoding='utf-8-sig')
+            df_final = df_final.replace({"nan": "", "<NA>": ""}, regex=False)
+
             logger("✅ Datos listos\n")
 
             # === 8. Exportar a Excel ===
             logger("📤 Insertando datos en Excel final...")
 
-            for col in df_final.columns:
-                if col.startswith("Ultima Lectura -") or \
-                col.startswith("Fecha Ultima Lectura -") or \
-                col.startswith("Ultimo Consumo -"):
-                    if col not in mapeo_columnas:
-                        mapeo_columnas[col] = col  
+            if usar_analisis_extra:
+                for col in df_final.columns:
+                    if col.startswith("Ultima Lectura -") or \
+                    col.startswith("Fecha Ultima Lectura -") or \
+                    col.startswith("Ultimo Consumo -"):
+                        if col not in mapeo_columnas:
+                            mapeo_columnas[col] = col
 
             # al final, guarda un archivo de salida único por input
             ruta_reporte_final = os.path.join(
@@ -192,7 +214,6 @@ def ejecutar_proceso_desde_gui(
             logger(f"✅ Reporte generado: {ruta_reporte_final}\n")
 
 
-            # === 9. Exportar a Excel ===
             logger("📤 Moviendo datos al excel Final...")
 
             mapeo_celdas = {
